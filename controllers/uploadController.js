@@ -1,10 +1,8 @@
-// /routes/upload.js
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import supabase from '../Config/supabaseConfig.js';
 import imageQueue from '../workers/imageWorker.js';
 
-// Configure multer storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage }).single('csvFile');
 
@@ -33,7 +31,6 @@ export default function uploadFile(req, res) {
 
             console.log('Parsed CSV records:', records);
 
-            // Check column names
             const requiredColumns = ['S.No.', 'Product Name', 'Input Image Urls'];
             const actualColumns = Object.keys(records[0] || {});
             
@@ -46,13 +43,12 @@ export default function uploadFile(req, res) {
             return res.status(400).json({ message: 'Error parsing CSV file', error: parseError });
         }
 
-        // Insert into fileStatus table and get the auto-generated requestID
         const { data: fileStatusData, error: fileStatusError } = await supabase
             .from('fileStatus')
             .insert([
                 { file_name: req.file.originalname, status: false }
             ])
-            .select('request_id'); // Returns the auto-generated UUID requestID
+            .select('request_id');
 
         if (fileStatusError) {
             console.error('Error inserting into fileStatus table:', fileStatusError);
@@ -62,7 +58,6 @@ export default function uploadFile(req, res) {
         const requestID = fileStatusData[0].request_id;
         console.log('Generated RequestID:', requestID);
 
-        // Prepare the records for insertion and job queue
         const results = records.map(record => ({
             srNo: record['S.No.'] ? record['S.No.'].trim() : '',
             product: record['Product Name'] ? record['Product Name'].trim() : '',
@@ -70,15 +65,14 @@ export default function uploadFile(req, res) {
             requestID
         }));
 
-        // Insert each row into the fileData table
         const { error: fileDataError } = await supabase
             .from('fileData')
             .insert(results.map(({ srNo, product, inputImageUrl, requestID }) => ({
                 sr_no: srNo,
                 product,
-                input_image_url: inputImageUrl, // Pass as an array
+                input_image_url: inputImageUrl,
                 requestId: requestID,
-                output_image_url: [], // Initially empty
+                output_image_url: [],
             })));
 
         if (fileDataError) {
@@ -86,10 +80,8 @@ export default function uploadFile(req, res) {
             return res.status(500).json({ message: 'Error inserting data into fileData table', error: fileDataError });
         }
 
-        // Add a job to the queue for image processing
         await imageQueue.add({ requestID, results });
 
-        // Respond with the requestID
         res.json({ message: 'File processed successfully', requestID });
     });
 }

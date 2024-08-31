@@ -11,20 +11,19 @@ const imageQueue = new Bull('image-processing', {
 });
 
 imageQueue.process(async (job) => {
-    const { requestID, results } = job.data; // Extract requestID and results from job data
+    const { requestID, results } = job.data;
 
     for (const { srNo, product, inputImageUrl } of results) {
-        const outputImageUrls = []; // Initialize an array to store processed image URLs for this record
+        const outputImageUrls = [];
 
         for (const url of inputImageUrl) {
             try {
-                const filename = url.split('/').pop(); // Extract the filename from the URL
-                const imageResponse = await axios.get(url, { responseType: 'arraybuffer' }); // Download the image
-                const compressedImage = await sharp(imageResponse.data) // Compress the image using sharp
+                const filename = url.split('/').pop();
+                const imageResponse = await axios.get(url, { responseType: 'arraybuffer' });
+                const compressedImage = await sharp(imageResponse.data)
                     .jpeg({ quality: 50 })
                     .toBuffer();
 
-                // Construct the storage path: `requestID/srNo/images/filename`
                 const storagePath = `${requestID}/${srNo}/${filename}`;
 
                 const { data: uploadData, error: uploadError } = await supabase
@@ -36,22 +35,21 @@ imageQueue.process(async (job) => {
 
                 if (uploadError) {
                     console.error('Error uploading image to Supabase storage:', uploadError);
-                    continue; // Skip to the next image if upload fails
+                    continue;
                 }
 
                 const publicUrl = supabase
                     .storage
                     .from('spyneAssesment')
                     .getPublicUrl(uploadData.path)
-                    .data.publicUrl; // Get the public URL of the uploaded image
+                    .data.publicUrl;
 
-                outputImageUrls.push(publicUrl); // Add the public URL to the outputImageUrls array
+                outputImageUrls.push(publicUrl);
             } catch (imageError) {
-                console.error('Error processing image:', imageError); // Log any errors during image processing
+                console.error('Error processing image:', imageError);
             }
         }
 
-        // Update the fileData table with processed image URLs
         try {
             const { error: updateError } = await supabase
                 .from('fileData')
@@ -67,7 +65,6 @@ imageQueue.process(async (job) => {
         }
     }
 
-    // After processing all rows, update the fileStatus table to mark processing as complete
     try {
         const { error: statusUpdateError } = await supabase
             .from('fileStatus')
@@ -77,7 +74,6 @@ imageQueue.process(async (job) => {
         if (statusUpdateError) {
             console.error('Error updating fileStatus table:', statusUpdateError);
         } else {
-            // Call the webhook API to notify that processing is complete
             try {
                 console.log("This is the requestID being sent to webhook: ", requestID);
                 
